@@ -1,0 +1,111 @@
+name: Release
+
+concurrency: release
+
+on:
+  pull_request_target:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+  issues: write
+  pull-requests: write
+
+env:
+  AUTOPUB_CMD: uvx --from autopub>=1.0.0a51 --with pygithub autopub
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      has_release: ${{ steps.check.outputs.has_release }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # For pull_request_target, checkout the PR merge commit
+          ref: ${{ github.event.pull_request && format('refs/pull/{0}/merge', github.event.number) || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Check
+        id: check
+        run: |
+          if $AUTOPUB_CMD check; then
+            echo "has_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_release=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload .autopub artifact
+        if: steps.check.outputs.has_release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: autopub-data
+          path: .autopub
+          include-hidden-files: true
+
+  publish:
+    needs: check-release
+    if: github.ref == 'refs/heads/main' && needs.check-release.outputs.has_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      issues: write
+      pull-requests: write
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Download .autopub
+        uses: actions/download-artifact@v4
+        with:
+          name: autopub-data
+          path: .autopub
+
+      - name: Build and publish
+        run: |
+          git remote set-url origin https://${{ github.token }}@github.com/${{ github.repository }}
+          echo "✨ Preparing..."
+          $AUTOPUB_CMD prepare
+          echo "✨ Building..."
+          $AUTOPUB_CMD build
+          echo "✨ Publishing..."
+          $AUTOPUB_CMD publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UV_PUBLISH_URL: https://test.pypi.org/legacy/
+
+      - name: Get project version
+        id: get-version
+        shell: python
+        run: |
+          import os
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("pyproject.toml").read_text())
+          version = data.get("project", {}).get("version", "unknown")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as f:
+              f.write(f"version={version}\n")
