@@ -39,7 +39,7 @@ jobs:
             fi
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
 
       - name: Verify .autopub directory
         if: steps.check.outputs.has_release == 'true'
