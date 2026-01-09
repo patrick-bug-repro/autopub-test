@@ -94,3 +94,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
           UV_PUBLISH_URL: https://test.pypi.org/legacy/
+          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
